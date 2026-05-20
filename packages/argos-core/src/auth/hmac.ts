@@ -1,4 +1,4 @@
-import { createHmac } from 'crypto'
+import { createHmac, randomBytes } from 'crypto'
 
 export const VERACODE_API_HOST = 'api.veracode.com'
 
@@ -26,14 +26,18 @@ export function buildHmacAuthHeader(
   method: string,
   urlPath: string
 ): string {
-  const nonce = crypto.randomUUID().replace(/-/g, '')
+  const nonce = randomBytes(16).toString('hex')
   const timestamp = Date.now().toString()
   const requestData = `id=${credentials.apiId}&host=${VERACODE_API_HOST}&url=${urlPath}&method=${method.toUpperCase()}`
   const signingData = `${requestData}\n${nonce}\n${timestamp}\nvcode_request_version_1`
 
-  const signature = createHmac('sha256', Buffer.from(credentials.apiKey, 'hex'))
-    .update(signingData)
-    .digest('hex')
+  // Veracode HMAC-SHA256 v1 key derivation chain
+  const keyBytes = Buffer.from(credentials.apiKey, 'hex')
+  const nonceBytes = Buffer.from(nonce, 'hex')
+  const hmacNonce = createHmac('sha256', keyBytes).update(nonceBytes).digest()
+  const hmacTs    = createHmac('sha256', hmacNonce).update(timestamp).digest()
+  const hmacVer   = createHmac('sha256', hmacTs).update('vcode_request_version_1').digest()
+  const signature = createHmac('sha256', hmacVer).update(signingData).digest('hex')
 
   return `VERACODE-HMAC-SHA-256 id=${credentials.apiId},ts=${timestamp},nonce=${nonce},sig=${signature}`
 }

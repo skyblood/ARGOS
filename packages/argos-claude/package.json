@@ -10,7 +10,7 @@
   "dependencies": {
     "@argos/core": "*",
     "@anthropic-ai/sdk": "^0.24.0",
-    "@modelcontextprotocol/sdk": "^0.6.0"
+    "@modelcontextprotocol/sdk": "^1.25.2"
   },
   "devDependencies": {
     "typescript": "*"

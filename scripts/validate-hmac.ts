@@ -2,6 +2,10 @@
 // Expected: Status: 200 — if 401, HMAC bug persists; if 403, API key lacks /applications permission
 import { buildHmacAuthHeader, getCredentials, VERACODE_API_HOST } from '../packages/argos-core/src/auth/hmac.js'
 
+// Strips CR/LF to prevent log-forging (CWE-117)
+const sanitizeLog = (value: unknown): string =>
+  String(value).replace(/[\r\n]/g, ' ')
+
 const prefix = process.env.ARGOS_TENANT_PREFIX ?? 'INCODACORP_INTERNAL'
 const creds = getCredentials(prefix)
 const urlPath = '/appsec/v2/applications'
@@ -16,5 +20,5 @@ if (res.ok) {
   const data = await res.json() as { _embedded?: { applications: unknown[] } }
   console.log('Apps encontradas:', data._embedded?.applications?.length ?? 0)
 } else {
-  console.error('Error body:', await res.text())
+  console.error('Error body:', sanitizeLog(JSON.stringify(await res.text())))
 }
