@@ -1,5 +1,7 @@
 import { createHmac } from 'crypto'
 
+export const VERACODE_API_HOST = 'api.veracode.com'
+
 export interface VeracodeCredentials {
   apiId: string
   apiKey: string
@@ -22,12 +24,12 @@ export function getCredentials(tenantEnvPrefix: string): VeracodeCredentials {
 export function buildHmacAuthHeader(
   credentials: VeracodeCredentials,
   method: string,
-  url: string
+  urlPath: string
 ): string {
   const nonce = crypto.randomUUID().replace(/-/g, '')
   const timestamp = Date.now().toString()
-  const requestData = `id=${credentials.apiId}&host=analysiscenter.veracode.com&url=${url}&method=${method.toUpperCase()}`
-  const signingData = `${requestData}\n${nonce}\n${timestamp}`
+  const requestData = `id=${credentials.apiId}&host=${VERACODE_API_HOST}&url=${urlPath}&method=${method.toUpperCase()}`
+  const signingData = `${requestData}\n${nonce}\n${timestamp}\nvcode_request_version_1`
 
   const signature = createHmac('sha256', Buffer.from(credentials.apiKey, 'hex'))
     .update(signingData)
