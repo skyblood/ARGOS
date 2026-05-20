@@ -1,0 +1,41 @@
+name: PR Checks
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test --if-present
+
+  claude-security-review:
+    needs: check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Claude PR security review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this PR for security issues. Focus on:
+            - tenant_id validation in every MCP tool call
+            - Claude API calls logged with user_id, tenant_id, query_hash
+            - HMAC-SHA256 audit chain integrity
+            - No hardcoded credentials (env vars only)
+            - Non-root user in Docker context
+          allowed_tools: "view,github"

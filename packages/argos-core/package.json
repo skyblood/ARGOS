@@ -1,0 +1,21 @@
+{
+  "name": "@argos/core",
+  "version": "0.1.0",
+  "description": "Veracode API client and security utilities for ARGOS — zero native dependencies",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "*",
+    "vitest": "*"
+  }
+}

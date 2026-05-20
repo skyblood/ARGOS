@@ -1,0 +1,14 @@
+{
+  "name": "argos",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build -w packages/argos-core -w packages/argos-cli",
+    "test": "npm run test -w packages/argos-core",
+    "typecheck": "npm run typecheck -w packages/argos-core -w packages/argos-cli -w packages/argos-claude"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
