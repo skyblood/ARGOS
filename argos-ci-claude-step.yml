@@ -1,5 +1,7 @@
-# Drop this block into pr-checks.yml after the Veracode Pipeline Scan job
-# Requires: ANTHROPIC_API_KEY secret, write permissions for pull-requests and contents
+# Drop this block into your pr-checks.yml after the Veracode Pipeline Scan job.
+# Requires: ANTHROPIC_API_KEY secret, pull-requests write permission.
+# The veracode-pipeline-scan job must upload artifact: veracode-pipeline-scan-results
+# containing veracode-results.json (JSON output from veracode/Veracode-pipeline-scan-action).
 
   claude-security-review:
     needs: veracode-pipeline-scan
@@ -11,55 +13,61 @@
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download SARIF artifact
+      - name: Download Veracode results
         uses: actions/download-artifact@v4
         with:
-          name: veracode-sarif
-          path: ./sarif-output
+          name: veracode-pipeline-scan-results
+          path: ./veracode-output
 
-      - name: Extract findings summary for Claude
-        id: sarif-summary
+      - name: Build Claude prompt with findings
         run: |
-          # Cap at 8 KB to stay under claude-code-action custom_instructions limit
-          python3 -c "
-          import json, sys
-          with open('./sarif-output/results.sarif') as f:
-              sarif = json.load(f)
-          findings = []
-          for run in sarif.get('runs', []):
-              for result in run.get('results', [])[:20]:  # max 20 findings
-                  rule_id = result.get('ruleId', 'unknown')
-                  msg = result.get('message', {}).get('text', '')[:200]
-                  locs = result.get('locations', [{}])
-                  loc = locs[0].get('physicalLocation', {})
-                  uri = loc.get('artifactLocation', {}).get('uri', '')
-                  line = loc.get('region', {}).get('startLine', '?')
-                  findings.append(f'- [{rule_id}] {uri}:{line} — {msg}')
-          summary = '\n'.join(findings) if findings else 'No findings.'
-          # Write to GITHUB_OUTPUT safely
-          import os
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              out.write('findings<<EOF\n')
-              out.write(summary[:6000])  # hard cap 6 KB
-              out.write('\nEOF\n')
-          "
+          python3 - <<'PYEOF'
+          import json, os
+
+          try:
+              with open('./veracode-output/veracode-results.json') as f:
+                  data = json.load(f)
+          except FileNotFoundError:
+              data = {}
+
+          findings = data.get('findings', [])
+          findings.sort(key=lambda f: f.get('severity', 0), reverse=True)
+          top = findings[:20]
+
+          lines = []
+          for f in top:
+              src = f.get('files', {}).get('source_file', {})
+              sev = f.get('severity', '?')
+              cwe = f.get('cwe_id', '?')
+              title = f.get('title', 'Unknown')
+              file_path = src.get('file', '?')
+              line = src.get('line', '?')
+              text = f.get('display_text', '')[:200]
+              lines.append(f"- [SEV {sev}] CWE-{cwe}: {title} — {file_path}:{line} — {text}")
+
+          summary = '\n'.join(lines) if lines else 'No findings.'
+
+          prompt = f"""Review this PR for security issues based on Veracode Pipeline Scan findings.
+          Prioritize: verify if each finding is exploitable in context, suggest minimal fixes,
+          and flag any finding that touches authentication, tenant isolation, or audit logging.
+
+          ## Veracode Pipeline Scan Findings
+          {summary[:6000]}
+
+          ## Security Constraints
+          - No hardcoded credentials — env vars only
+          - Validate all external input at system boundaries
+          - Non-root user in Docker context
+          """
+
+          with open('veracode-prompt.txt', 'w') as out:
+              out.write(prompt)
+          PYEOF
 
       - name: Claude PR review with Veracode context
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Review this PR for security issues. Focus on the Veracode findings below.
-            Prioritize: verify if each finding is exploitable in context, suggest minimal fixes,
-            and flag any finding that touches authentication, tenant isolation, or audit logging.
-          custom_instructions: |
-            ## Veracode Pipeline Scan Findings
-            ${{ steps.sarif-summary.outputs.findings }}
-
-            ## ARGOS Security Constraints
-            - tenant_id must be validated on every MCP tool call
-            - All Claude API calls must be logged with user_id, tenant_id, query_hash
-            - HMAC-SHA256 audit chain must not be bypassable
-            - Docker runs as non-root argos:argos, read-only filesystem
+          prompt_file: veracode-prompt.txt
           allowed_tools: "view,github"
           # Do NOT allow Edit/Write — Claude annotates only, does not auto-commit
