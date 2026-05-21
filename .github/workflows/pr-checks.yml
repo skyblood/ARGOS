@@ -18,8 +18,31 @@ jobs:
       - run: npm run typecheck
       - run: npm run test --if-present
 
+  build-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package argos-core for Veracode
+        run: |
+          zip -r veracode-artifact.zip \
+            packages/argos-core/src/ \
+            packages/argos-core/package.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: veracode-artifact
+          path: veracode-artifact.zip
+
+  veracode-scan:
+    needs: build-artifact
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/veracode-pipeline-scan.yml
+    with:
+      veracode_policy_name: "ARGOS Security Policy"
+      fail_build: false
+    secrets: inherit
+
   claude-security-review:
-    needs: check
+    needs: [check, veracode-scan]
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -27,15 +50,62 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Claude PR security review
+
+      - name: Download Veracode results
+        uses: actions/download-artifact@v4
+        with:
+          name: veracode-pipeline-scan-results
+          path: ./veracode-output
+
+      - name: Build Claude prompt with findings
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+
+          try:
+              with open('./veracode-output/veracode-results.json') as f:
+                  data = json.load(f)
+          except FileNotFoundError:
+              data = {}
+
+          findings = data.get('findings', [])
+          findings.sort(key=lambda f: f.get('severity', 0), reverse=True)
+          top = findings[:20]
+
+          lines = []
+          for f in top:
+              src = f.get('files', {}).get('source_file', {})
+              sev = f.get('severity', '?')
+              cwe = f.get('cwe_id', '?')
+              title = f.get('title', 'Unknown')
+              file_path = src.get('file', '?')
+              line = src.get('line', '?')
+              text = f.get('display_text', '')[:200]
+              lines.append(f"- [SEV {sev}] CWE-{cwe}: {title} — {file_path}:{line} — {text}")
+
+          summary = '\n'.join(lines) if lines else 'No findings.'
+
+          prompt = f"""Review this PR for security issues. Focus on the Veracode findings below.
+          Prioritize: verify if each finding is exploitable in context, suggest minimal fixes,
+          and flag any finding that touches authentication, tenant isolation, or audit logging.
+
+          ## Veracode Pipeline Scan Findings
+          {summary[:6000]}
+
+          ## ARGOS Security Constraints
+          - tenant_id must be validated on every MCP tool call
+          - All Claude API calls must be logged with user_id, tenant_id, query_hash
+          - HMAC-SHA256 audit chain must not be bypassable
+          - Docker runs as non-root argos:argos, read-only filesystem
+          """
+
+          with open('veracode-prompt.txt', 'w') as out:
+              out.write(prompt)
+          PYEOF
+
+      - name: Claude PR review with Veracode context
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Review this PR for security issues. Focus on:
-            - tenant_id validation in every MCP tool call
-            - Claude API calls logged with user_id, tenant_id, query_hash
-            - HMAC-SHA256 audit chain integrity
-            - No hardcoded credentials (env vars only)
-            - Non-root user in Docker context
+          prompt_file: veracode-prompt.txt
           allowed_tools: "view,github"
