@@ -35,8 +35,17 @@ export interface Dependency {
   licenses: string[]
 }
 
-// Phase 3+ — stub types (not implemented in v2)
-export interface ScanStatus { scan_id: string; status: 'PENDING' | 'RUNNING' | 'COMPLETE' | 'FAILED' }
+// Phase 3 — Pipeline Scan types
+export interface ScanSubmitParams {
+  url: string        // pre-signed URL or public URL to the artifact zip
+  filename: string   // original filename (e.g. argos-core.zip)
+}
+export interface ScanStatus {
+  scan_id: string
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILURE' | 'CANCELLED'
+  message?: string
+  findings_count?: number
+}
 export interface CVE { id: string; severity: string; description: string }
 export interface IaCParams { appGuid: string }
 export interface Misconfiguration { rule_id: string; severity: string; resource: string }

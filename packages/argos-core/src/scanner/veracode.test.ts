@@ -142,12 +142,58 @@ describe('VeracodeScanner — SCA', () => {
   })
 })
 
-// ── Phase 3+ stubs ────────────────────────────────────────────────────────────
+// ── Phase 3 — Pipeline Scan ───────────────────────────────────────────────────
 
-describe('VeracodeScanner — Phase 3+ stubs', () => {
+describe('VeracodeScanner — Pipeline Scan', () => {
+  it('submitPipelineScan returns scan_id', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ scan_id: 'scan-123' }, 201)))
+    const scanId = await new VeracodeScanner('TEST').submitPipelineScan({
+      url: 'https://example.com/artifact.zip',
+      filename: 'artifact.zip',
+    })
+    expect(scanId).toBe('scan-123')
+  })
+
+  it('submitPipelineScan throws AuthError on 401', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({}, 401)))
+    await expect(
+      new VeracodeScanner('TEST').submitPipelineScan({ url: 'https://x.com/a.zip', filename: 'a.zip' })
+    ).rejects.toThrow(AuthError)
+  })
+
+  it('getScanStatus returns status object', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonRes({ scan_id: 'scan-123', status: 'RUNNING', findings_count: 0 })
+    ))
+    const status = await new VeracodeScanner('TEST').getScanStatus('scan-123')
+    expect(status.status).toBe('RUNNING')
+    expect(status.scan_id).toBe('scan-123')
+  })
+
+  it('waitForScan returns when status is SUCCESS', async () => {
+    vi.useFakeTimers()
+    let call = 0
+    const responses = [
+      { scan_id: 's1', status: 'PENDING' },
+      { scan_id: 's1', status: 'RUNNING' },
+      { scan_id: 's1', status: 'SUCCESS', findings_count: 3 },
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() =>
+      Promise.resolve(jsonRes(responses[Math.min(call++, responses.length - 1)]))
+    ))
+    const promise = new VeracodeScanner('TEST').waitForScan('s1', 1000)
+    await vi.runAllTimersAsync()
+    const result = await promise
+    expect(result.status).toBe('SUCCESS')
+    expect(result.findings_count).toBe(3)
+  })
+})
+
+// ── Phase 4+ stubs ────────────────────────────────────────────────────────────
+
+describe('VeracodeScanner — Phase 4+ stubs', () => {
   it('all throw NotImplementedError synchronously', () => {
     const s = new VeracodeScanner('TEST')
-    expect(() => s.getScanStatus('x')).toThrow(NotImplementedError)
     expect(() => s.listImageVulnerabilities('x')).toThrow(NotImplementedError)
     expect(() => s.listMisconfigurations({ appGuid: 'x' })).toThrow(NotImplementedError)
     expect(() => s.getFixSuggestions('x')).toThrow(NotImplementedError)

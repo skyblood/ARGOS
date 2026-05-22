@@ -4,7 +4,7 @@ import {
 } from './errors.js'
 import type {
   AppSecScanner, CVE, Dependency, DepParams, Finding, FindingDetail, FindingParams,
-  FixSuggestion, IaCParams, Misconfiguration, Project, ScanStatus, Workspace,
+  FixSuggestion, IaCParams, Misconfiguration, Project, ScanStatus, ScanSubmitParams, Workspace,
 } from './interface.js'
 
 const BASE_URL = `https://${VERACODE_API_HOST}`
@@ -125,11 +125,41 @@ export class VeracodeScanner implements AppSecScanner {
     return result
   }
 
-  // Phase 3+ stubs
-  getScanStatus(_scanId: string): Promise<ScanStatus> { throw new NotImplementedError('v3') }
-  listImageVulnerabilities(_image: string): Promise<CVE[]> { throw new NotImplementedError('v3') }
-  listMisconfigurations(_params: IaCParams): Promise<Misconfiguration[]> { throw new NotImplementedError('v3') }
-  getFixSuggestions(_findingId: string): Promise<FixSuggestion[]> { throw new NotImplementedError('v3') }
+  // Phase 3 — Pipeline Scan submit + poll
+  async submitPipelineScan(params: ScanSubmitParams): Promise<string> {
+    const body = JSON.stringify({ url: params.url, filename: params.filename })
+    const urlPath = '/pipeline_scan/v1/scans'
+    const authHeader = buildHmacAuthHeader(this.credentials, 'POST', urlPath)
+    const res = await fetch(`${BASE_URL}${urlPath}`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body,
+    })
+    if (res.status === 401) throw new AuthError()
+    if (!res.ok) throw new VeracodeError(res.status, await res.text())
+    const data = await res.json() as { scan_id: string }
+    return data.scan_id
+  }
+
+  async getScanStatus(scanId: string): Promise<ScanStatus> {
+    return this.get(`/pipeline_scan/v1/scans/${scanId}`) as Promise<ScanStatus>
+  }
+
+  // Polls until SUCCESS/FAILURE/CANCELLED or timeout (default 30 min)
+  async waitForScan(scanId: string, intervalMs = 10_000, timeoutMs = 30 * 60 * 1000): Promise<ScanStatus> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      const status = await this.getScanStatus(scanId)
+      if (status.status !== 'PENDING' && status.status !== 'RUNNING') return status
+      await new Promise(r => setTimeout(r, intervalMs))
+    }
+    throw new VeracodeError(408, `Scan ${scanId} timed out after ${timeoutMs / 1000}s`)
+  }
+
+  // Phase 4+ stubs
+  listImageVulnerabilities(_image: string): Promise<CVE[]> { throw new NotImplementedError('v4') }
+  listMisconfigurations(_params: IaCParams): Promise<Misconfiguration[]> { throw new NotImplementedError('v4') }
+  getFixSuggestions(_findingId: string): Promise<FixSuggestion[]> { throw new NotImplementedError('v4') }
 }
 
 interface RawLibrary {
