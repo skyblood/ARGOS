@@ -4,7 +4,7 @@ import {
 } from './errors.js'
 import type {
   AppSecScanner, CVE, Dependency, DepParams, Finding, FindingDetail, FindingParams,
-  FixSuggestion, IaCParams, Misconfiguration, ScanStatus,
+  FixSuggestion, IaCParams, Misconfiguration, Project, ScanStatus, Workspace,
 } from './interface.js'
 
 const BASE_URL = `https://${VERACODE_API_HOST}`
@@ -68,10 +68,74 @@ export class VeracodeScanner implements AppSecScanner {
     return this.get(`/appsec/v2/applications/${appGuid}/findings/${findingId}`) as Promise<FindingDetail>
   }
 
-  // Phase 2+ stubs
-  listDependencies(_params: DepParams): Promise<Dependency[]> { throw new NotImplementedError('v2') }
-  getScanStatus(_scanId: string): Promise<ScanStatus> { throw new NotImplementedError('v2') }
-  listImageVulnerabilities(_image: string): Promise<CVE[]> { throw new NotImplementedError('v2') }
-  listMisconfigurations(_params: IaCParams): Promise<Misconfiguration[]> { throw new NotImplementedError('v2') }
-  getFixSuggestions(_findingId: string): Promise<FixSuggestion[]> { throw new NotImplementedError('v2') }
+  // Phase 2 — SCA helpers (not in AppSecScanner interface)
+  async listWorkspaces(): Promise<Workspace[]> {
+    let urlPath: string | null = '/srcclr/v3/workspaces?size=50&page=0'
+    const result: Workspace[] = []
+    while (urlPath) {
+      const data = await this.get(urlPath) as {
+        _embedded?: { workspaces: Workspace[] }
+        _links?: { next?: { href: string } }
+      }
+      result.push(...(data._embedded?.workspaces ?? []))
+      const next = data._links?.next?.href ?? null
+      urlPath = next ? new URL(next).pathname + new URL(next).search : null
+    }
+    return result
+  }
+
+  async listProjects(workspaceId: string): Promise<Project[]> {
+    let urlPath: string | null = `/srcclr/v3/workspaces/${workspaceId}/projects?size=50&page=0`
+    const result: Project[] = []
+    while (urlPath) {
+      const data = await this.get(urlPath) as {
+        _embedded?: { projects: Project[] }
+        _links?: { next?: { href: string } }
+      }
+      result.push(...(data._embedded?.projects ?? []))
+      const next = data._links?.next?.href ?? null
+      urlPath = next ? new URL(next).pathname + new URL(next).search : null
+    }
+    return result
+  }
+
+  // Phase 2 — SCA (implemented)
+  async listDependencies(params: DepParams): Promise<Dependency[]> {
+    const { workspaceId, projectId } = params
+    let urlPath: string | null =
+      `/srcclr/v3/workspaces/${workspaceId}/projects/${projectId}/libraries?size=500&page=0`
+    const result: Dependency[] = []
+    while (urlPath) {
+      const data = await this.get(urlPath) as {
+        _embedded?: { libraries: RawLibrary[] }
+        _links?: { next?: { href: string } }
+      }
+      for (const lib of data._embedded?.libraries ?? []) {
+        result.push({
+          component_id: lib.id ?? '',
+          name: lib.name ?? '',
+          version: lib.version ?? '',
+          vulnerability_count: lib.vulnerability_count ?? 0,
+          licenses: lib.licenses?.map((l: { name: string }) => l.name) ?? [],
+        })
+      }
+      const next = data._links?.next?.href ?? null
+      urlPath = next ? new URL(next).pathname + new URL(next).search : null
+    }
+    return result
+  }
+
+  // Phase 3+ stubs
+  getScanStatus(_scanId: string): Promise<ScanStatus> { throw new NotImplementedError('v3') }
+  listImageVulnerabilities(_image: string): Promise<CVE[]> { throw new NotImplementedError('v3') }
+  listMisconfigurations(_params: IaCParams): Promise<Misconfiguration[]> { throw new NotImplementedError('v3') }
+  getFixSuggestions(_findingId: string): Promise<FixSuggestion[]> { throw new NotImplementedError('v3') }
+}
+
+interface RawLibrary {
+  id?: string
+  name?: string
+  version?: string
+  vulnerability_count?: number
+  licenses?: { name: string }[]
 }

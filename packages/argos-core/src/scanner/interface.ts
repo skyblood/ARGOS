@@ -23,9 +23,19 @@ export interface FindingDetail extends Finding {
   remediation_guidance: string
 }
 
-// Phase 2+ — stub types (not implemented in v1)
-export interface DepParams { appGuid: string }
-export interface Dependency { component_id: string; name: string; vulnerability_count: number }
+// Phase 2 — SCA types
+export interface Workspace { id: string; name: string; slug: string }
+export interface Project  { id: string; name: string; last_scan_date: string }
+export interface DepParams { workspaceId: string; projectId: string }
+export interface Dependency {
+  component_id: string
+  name: string
+  version: string
+  vulnerability_count: number
+  licenses: string[]
+}
+
+// Phase 3+ — stub types (not implemented in v2)
 export interface ScanStatus { scan_id: string; status: 'PENDING' | 'RUNNING' | 'COMPLETE' | 'FAILED' }
 export interface CVE { id: string; severity: string; description: string }
 export interface IaCParams { appGuid: string }
