@@ -46,9 +46,27 @@ export interface ScanStatus {
   message?: string
   findings_count?: number
 }
-export interface CVE { id: string; severity: string; description: string }
-export interface IaCParams { appGuid: string }
-export interface Misconfiguration { rule_id: string; severity: string; resource: string }
+// Phase 4 — Container + IaC types
+export interface ImageParams { workspaceId: string; projectId: string; image?: string }
+export interface CVE {
+  id: string
+  severity: string
+  cvss_score: number
+  description: string
+  affected_component: string
+  fixed_version?: string
+}
+export interface IaCParams { workspaceId: string; projectId: string }
+export interface Misconfiguration {
+  rule_id: string
+  severity: string
+  resource: string
+  file?: string
+  line?: number
+  remediation?: string
+}
+
+// Phase 5+ stub
 export interface FixSuggestion { suggestion: string; confidence: number }
 
 export interface AppSecScanner {
@@ -60,7 +78,7 @@ export interface AppSecScanner {
   // Phase 2+ — NotImplementedError
   listDependencies(params: DepParams): Promise<Dependency[]>
   getScanStatus(scanId: string): Promise<ScanStatus>
-  listImageVulnerabilities(image: string): Promise<CVE[]>
+  listImageVulnerabilities(params: ImageParams): Promise<CVE[]>
   listMisconfigurations(params: IaCParams): Promise<Misconfiguration[]>
   // TODO: validate /appsec/v2/flaws/{id}/fix_suggestions exists as REST endpoint before implementing
   getFixSuggestions(findingId: string): Promise<FixSuggestion[]>

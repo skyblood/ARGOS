@@ -4,7 +4,8 @@ import {
 } from './errors.js'
 import type {
   AppSecScanner, CVE, Dependency, DepParams, Finding, FindingDetail, FindingParams,
-  FixSuggestion, IaCParams, Misconfiguration, Project, ScanStatus, ScanSubmitParams, Workspace,
+  FixSuggestion, IaCParams, ImageParams, Misconfiguration, Project, ScanStatus,
+  ScanSubmitParams, Workspace,
 } from './interface.js'
 
 const BASE_URL = `https://${VERACODE_API_HOST}`
@@ -156,10 +157,64 @@ export class VeracodeScanner implements AppSecScanner {
     throw new VeracodeError(408, `Scan ${scanId} timed out after ${timeoutMs / 1000}s`)
   }
 
-  // Phase 4+ stubs
-  listImageVulnerabilities(_image: string): Promise<CVE[]> { throw new NotImplementedError('v4') }
-  listMisconfigurations(_params: IaCParams): Promise<Misconfiguration[]> { throw new NotImplementedError('v4') }
-  getFixSuggestions(_findingId: string): Promise<FixSuggestion[]> { throw new NotImplementedError('v4') }
+  // Phase 4 — Container scanning (SCA issues filtered by scan_type=CONTAINER)
+  async listImageVulnerabilities(params: ImageParams): Promise<CVE[]> {
+    const { workspaceId, projectId, image } = params
+    const qs = new URLSearchParams({ size: '500', page: '0', scan_type: 'CONTAINER' })
+    if (image) qs.set('image', image)
+    let urlPath: string | null =
+      `/srcclr/v3/workspaces/${workspaceId}/projects/${projectId}/issues?${qs}`
+    const result: CVE[] = []
+    while (urlPath) {
+      const data = await this.get(urlPath) as {
+        _embedded?: { issues: RawIssue[] }
+        _links?: { next?: { href: string } }
+      }
+      for (const issue of data._embedded?.issues ?? []) {
+        result.push({
+          id: issue.cve?.name ?? issue.id ?? '',
+          severity: issue.severity ?? 'UNKNOWN',
+          cvss_score: issue.cve?.cvss_score ?? 0,
+          description: issue.cve?.summary ?? '',
+          affected_component: issue.library?.name ?? '',
+          fixed_version: issue.library?.version_to_update_to,
+        })
+      }
+      const next = data._links?.next?.href ?? null
+      urlPath = next ? new URL(next).pathname + new URL(next).search : null
+    }
+    return result
+  }
+
+  // Phase 4 — IaC misconfigurations (SCA issues filtered by scan_type=IAC)
+  async listMisconfigurations(params: IaCParams): Promise<Misconfiguration[]> {
+    const { workspaceId, projectId } = params
+    let urlPath: string | null =
+      `/srcclr/v3/workspaces/${workspaceId}/projects/${projectId}/issues?size=500&page=0&scan_type=IAC`
+    const result: Misconfiguration[] = []
+    while (urlPath) {
+      const data = await this.get(urlPath) as {
+        _embedded?: { issues: RawIssue[] }
+        _links?: { next?: { href: string } }
+      }
+      for (const issue of data._embedded?.issues ?? []) {
+        result.push({
+          rule_id: issue.rule_id ?? issue.id ?? '',
+          severity: issue.severity ?? 'UNKNOWN',
+          resource: issue.resource ?? '',
+          file: issue.file,
+          line: issue.line,
+          remediation: issue.remediation,
+        })
+      }
+      const next = data._links?.next?.href ?? null
+      urlPath = next ? new URL(next).pathname + new URL(next).search : null
+    }
+    return result
+  }
+
+  // Phase 5+ stub
+  getFixSuggestions(_findingId: string): Promise<FixSuggestion[]> { throw new NotImplementedError('v5') }
 }
 
 interface RawLibrary {
@@ -168,4 +223,16 @@ interface RawLibrary {
   version?: string
   vulnerability_count?: number
   licenses?: { name: string }[]
+}
+
+interface RawIssue {
+  id?: string
+  severity?: string
+  rule_id?: string
+  resource?: string
+  file?: string
+  line?: number
+  remediation?: string
+  cve?: { name?: string; cvss_score?: number; summary?: string }
+  library?: { name?: string; version_to_update_to?: string }
 }

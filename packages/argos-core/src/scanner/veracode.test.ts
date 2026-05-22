@@ -189,13 +189,72 @@ describe('VeracodeScanner — Pipeline Scan', () => {
   })
 })
 
-// ── Phase 4+ stubs ────────────────────────────────────────────────────────────
+// ── Phase 4 — Container + IaC ─────────────────────────────────────────────────
 
-describe('VeracodeScanner — Phase 4+ stubs', () => {
-  it('all throw NotImplementedError synchronously', () => {
-    const s = new VeracodeScanner('TEST')
-    expect(() => s.listImageVulnerabilities('x')).toThrow(NotImplementedError)
-    expect(() => s.listMisconfigurations({ appGuid: 'x' })).toThrow(NotImplementedError)
-    expect(() => s.getFixSuggestions('x')).toThrow(NotImplementedError)
+describe('VeracodeScanner — Container scanning', () => {
+  it('listImageVulnerabilities maps CVE fields', async () => {
+    const issues = [{
+      id: 'i1',
+      severity: 'HIGH',
+      cve: { name: 'CVE-2021-44228', cvss_score: 10.0, summary: 'Log4Shell RCE' },
+      library: { name: 'log4j-core', version_to_update_to: '2.17.1' },
+    }]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ _embedded: { issues } })))
+    const cves = await new VeracodeScanner('TEST').listImageVulnerabilities({
+      workspaceId: 'ws1', projectId: 'p1',
+    })
+    expect(cves).toHaveLength(1)
+    expect(cves[0]).toMatchObject({
+      id: 'CVE-2021-44228',
+      severity: 'HIGH',
+      cvss_score: 10.0,
+      description: 'Log4Shell RCE',
+      affected_component: 'log4j-core',
+      fixed_version: '2.17.1',
+    })
+  })
+
+  it('listImageVulnerabilities returns empty on no issues', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({})))
+    expect(await new VeracodeScanner('TEST').listImageVulnerabilities({ workspaceId: 'ws1', projectId: 'p1' }))
+      .toEqual([])
+  })
+})
+
+describe('VeracodeScanner — IaC misconfigurations', () => {
+  it('listMisconfigurations maps issue fields', async () => {
+    const issues = [{
+      id: 'm1',
+      rule_id: 'CKV_AWS_18',
+      severity: 'MEDIUM',
+      resource: 'aws_s3_bucket.logs',
+      file: 'infra/main.tf',
+      line: 42,
+      remediation: 'Enable S3 bucket access logging',
+    }]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({ _embedded: { issues } })))
+    const misconfigs = await new VeracodeScanner('TEST').listMisconfigurations({ workspaceId: 'ws1', projectId: 'p1' })
+    expect(misconfigs).toHaveLength(1)
+    expect(misconfigs[0]).toMatchObject({
+      rule_id: 'CKV_AWS_18',
+      severity: 'MEDIUM',
+      resource: 'aws_s3_bucket.logs',
+      file: 'infra/main.tf',
+      line: 42,
+    })
+  })
+
+  it('listMisconfigurations returns empty on no issues', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonRes({})))
+    expect(await new VeracodeScanner('TEST').listMisconfigurations({ workspaceId: 'ws1', projectId: 'p1' }))
+      .toEqual([])
+  })
+})
+
+// ── Phase 5+ stub ─────────────────────────────────────────────────────────────
+
+describe('VeracodeScanner — Phase 5+ stubs', () => {
+  it('getFixSuggestions throws NotImplementedError', () => {
+    expect(() => new VeracodeScanner('TEST').getFixSuggestions('x')).toThrow(NotImplementedError)
   })
 })
