@@ -4,6 +4,12 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_veracode:
+        description: 'Skip Veracode scan (true = faster smoke test)'
+        required: false
+        default: 'false'
 
 jobs:
   check:
@@ -34,7 +40,7 @@ jobs:
 
   veracode-scan:
     needs: build-artifact
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.skip_veracode != 'true')
     uses: ./.github/workflows/veracode-pipeline-scan.yml
     with:
       veracode_policy_name: "ARGOS Security Policy"
@@ -43,7 +49,7 @@ jobs:
 
   claude-security-review:
     needs: [check, veracode-scan]
-    if: github.event_name == 'pull_request'
+    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && inputs.skip_veracode != 'true'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

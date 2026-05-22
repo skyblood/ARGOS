@@ -91,6 +91,25 @@ report: build
 	    --format $(or $(FORMAT),dev) \
 	    --output /output/report.json
 
+## Trigger full CI pipeline manually (requires gh auth + GitHub Secrets configured)
+ci:
+	gh workflow run pr-checks.yml --ref main -f skip_veracode=false
+	@echo "Pipeline running — monitor with: make ci-watch"
+
+## Trigger CI smoke test (skip Veracode scan — faster, no credentials needed)
+ci-smoke:
+	gh workflow run pr-checks.yml --ref main -f skip_veracode=true
+	@echo "Smoke test running — monitor with: make ci-watch"
+
+## Stream live CI run status
+ci-watch:
+	gh run list --workflow=pr-checks.yml --limit 1
+	gh run watch $$(gh run list --workflow=pr-checks.yml --limit 1 --json databaseId -q '.[0].databaseId')
+
+## Check configured secrets (names only, values are never shown)
+ci-secrets:
+	gh secret list
+
 ## Run unit tests (local, no Docker)
 test:
 	npm run test -w packages/argos-core
