@@ -91,20 +91,14 @@ report: build
 	    --format $(or $(FORMAT),dev) \
 	    --output /output/report.json
 
-## Trigger full CI pipeline manually (requires gh auth + GitHub Secrets configured)
-ci:
-	gh workflow run pr-checks.yml --ref main -f skip_veracode=false
-	@echo "Pipeline running — monitor with: make ci-watch"
-
-## Trigger CI smoke test (skip Veracode scan — faster, no credentials needed)
+## Trigger smoke test (typecheck + tests + artifact build, no Veracode)
 ci-smoke:
-	gh workflow run pr-checks.yml --ref main -f skip_veracode=true
-	@echo "Smoke test running — monitor with: make ci-watch"
+	gh workflow run smoke-test.yml --ref main
+	@echo "Smoke test running — monitor with: make ci-watch WORKFLOW=smoke-test.yml"
 
-## Stream live CI run status
+## Stream live CI run status (WORKFLOW defaults to smoke-test.yml)
 ci-watch:
-	gh run list --workflow=pr-checks.yml --limit 1
-	gh run watch $$(gh run list --workflow=pr-checks.yml --limit 1 --json databaseId -q '.[0].databaseId')
+	gh run watch $$(gh run list --workflow=$(or $(WORKFLOW),smoke-test.yml) --limit 1 --json databaseId -q '.[0].databaseId')
 
 ## Check configured secrets (names only, values are never shown)
 ci-secrets:
