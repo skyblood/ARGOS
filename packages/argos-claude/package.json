@@ -4,7 +4,12 @@
   "description": "Claude Code plugin for ARGOS — slash commands, MCP server, agents",
   "private": true,
   "type": "module",
+  "main": "dist/mcp/server.js",
+  "bin": {
+    "argos-mcp": "dist/mcp/server.js"
+  },
   "scripts": {
+    "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
